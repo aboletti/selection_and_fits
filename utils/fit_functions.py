@@ -4,7 +4,6 @@ from ROOT import gSystem
 gSystem.Load('libRooFit')
 from ROOT import RooFit, RooRealVar, RooDataSet, RooArgList, RooTreeData, RooArgSet, RooAddPdf, RooFormulaVar
 from ROOT import RooGaussian, RooExponential, RooChebychev, RooProdPdf, RooCBShape, TFile, RooPolynomial, RooVoigtian, RooBreitWigner, RooFFTConvPdf
-from uncertainties import ufloat, umath
 
 from utils import *
 
@@ -99,28 +98,28 @@ def bwcb(mean_, width_, sigma_, alpha_, n_, fn, tagged_mass, w):
 
 
 
-def calculateTotSigma(sigma_vec, f_vec):
+# def calculateTotSigma(sigma_vec, f_vec):
     
-    if len(sigma_vec) != len(f_vec) + 1:
-        print 'calculateTotSigma: Warning! wrong vector lenghts'
-        return 0
-    totSigma = ufloat(0., 0.)
-    sum_f    = ufloat(0., 0.)
+#     if len(sigma_vec) != len(f_vec) + 1:
+#         print 'calculateTotSigma: Warning! wrong vector lenghts'
+#         return 0
+#     totSigma = 0.
+#     sum_f    = 0.
 
-    s1 = sigma_vec[0]
-    s2 = sigma_vec[1]
-    f1 = f_vec[0]
-    totSigma = pow(s1, 2) * f1 + (1-f1)* pow(s2,2)
-    for i in range(len(f_vec)-1):
-        s1 = totSigma
-        s2 = sigma_vec[i+2]
-        f1 = f_vec[i+1]
-        totSigma = pow(s1, 2) * f1 + (1-f1)* pow(s2,2)
+#     s1 = sigma_vec[0]
+#     s2 = sigma_vec[1]
+#     f1 = f_vec[0]
+#     totSigma = pow(s1, 2) * f1 + (1-f1)* pow(s2,2)
+#     for i in range(len(f_vec)-1):
+#         s1 = totSigma
+#         s2 = sigma_vec[i+2]
+#         f1 = f_vec[i+1]
+#         totSigma = pow(s1, 2) * f1 + (1-f1)* pow(s2,2)
     
-#     print 'calculateTotSigma: totSigma = ', totSigma, ' sum_f = ',  sum_f
-#     totSigma += (1-sum_f) *  pow(sigma_vec[-1],2)  
-    print 'calculateTotSigma: ', umath.sqrt(totSigma)
-    return umath.sqrt(totSigma) 
+# #     print 'calculateTotSigma: totSigma = ', totSigma, ' sum_f = ',  sum_f
+# #     totSigma += (1-sum_f) *  pow(sigma_vec[-1],2)  
+#     print 'calculateTotSigma: ', sqrt(totSigma)
+#     return sqrt(totSigma) 
     
 
 

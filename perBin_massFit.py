@@ -25,7 +25,6 @@ gSystem.Load('utils/func_roofit/libRooDoubleCBFast')
 from ROOT import RooFit, RooRealVar, RooDataSet, RooArgList, RooTreeData, RooArgSet, RooAddPdf, RooFormulaVar
 from ROOT import RooGaussian, RooExponential, RooChebychev, RooProdPdf, RooCBShape, TFile, RooPolynomial
 import sys, math
-from uncertainties import ufloat
 import random
 
 ROOT.RooMsgService.instance().setGlobalKillBelow(4)
@@ -34,9 +33,15 @@ ROOT.Math.MinimizerOptions.SetDefaultMaxFunctionCalls(50000)
 
 def _getFittedVar(varName, w=None):
     if w is not None:
-        return ufloat (w.var(varName).getVal() , w.var(varName).getError())
+        return w.var(varName).getVal()
     else :
-        return ufloat (varName.getVal()        , varName.getError())
+        return varName.getVal()
+
+def _getFittedVarError(varName, w=None):
+    if w is not None:
+        return w.var(varName).getError()
+    else :
+        return varName.getError()
 
 def _goodFit(r):
     return (r.status()==0 and r.covQual() == 3)
@@ -62,13 +67,14 @@ def _writeChi2(chi2):
 def _constrainVar(var):
     
     constr = _getFittedVar(var.GetName(), w)
+    constrErr = _getFittedVarError(var.GetName(), w)
     gauss_constr = RooGaussian(  "c_%s" %var.GetName() , 
                                  "c_%s" %var.GetName() , 
                                 var         ,  
-                                ROOT.RooFit.RooConst( constr.n ), 
-                                ROOT.RooFit.RooConst( constr.s )
+                                ROOT.RooFit.RooConst( constr ), 
+                                ROOT.RooFit.RooConst( constrErr )
                                 ) 
-    print 'constraining var',   var.GetName(), ': ',     constr.n , ' with uncertainty ' , constr.s                          
+    print 'constraining var',   var.GetName(), ': ',     constr , ' with uncertainty ' , constrErr                          
     return gauss_constr                        
 
 
@@ -167,16 +173,18 @@ def fitMC(fulldata, correctTag, ibin):
     if correctTag:
         frame. addObject(_writeChi2( frame.chiSquare("fitfunction_Norm[tagged_mass]_Range[full]_NormRange[full]", "h_fullmc",  nparam) ))
         dict_s_rt[ibin]   = _getFittedVar(nsig)
+        dict_s_rt_err[ibin]   = _getFittedVarError(nsig)
         nRT = RooRealVar ("nRT_%s"%ibin, "yield of RT signal",0,1.E6)
-        nRT.setVal(  dict_s_rt[ibin].n)
-        nRT.setError(dict_s_rt[ibin].s)
+        nRT.setVal(  dict_s_rt[ibin])
+        nRT.setError(dict_s_rt_err[ibin])
         getattr(w,"import")(nRT)
     else:
         frame. addObject(_writeChi2( frame.chiSquare("doublecb_%s_Norm[tagged_mass]_Comp[doublecb_%s]_Range[mcrange]_NormRange[mcrange]"%(ibin,ibin), "h_fullmc",  nparam) ))
-        dict_s_wt[ibin]    = ufloat(data.sumEntries(), math.sqrt(data.sumEntries()))
+        dict_s_wt[ibin]    = data.sumEntries()
+        dict_s_wt_err[ibin]    = math.sqrt(data.sumEntries())
         nWT = RooRealVar ("nWT_%s"%ibin, "yield of WT signal",0,1.E6)
-        nWT.setVal(  dict_s_wt[ibin].n)
-        nWT.setError(dict_s_wt[ibin].s)
+        nWT.setVal(  dict_s_wt[ibin])
+        nWT.setError(dict_s_wt_err[ibin])
         getattr(w,"import")(nWT)
 
 #         chi2 = frame.chiSquare("doublecb_%s_Norm[tagged_mass]_Comp[doublecb_%s]_Range[mcrange]_NormRange[mcrange]"%(ibin,ibin), "h_fullmc",  nparam)
@@ -199,7 +207,8 @@ def fitData(fulldata, ibin):
     data = fulldata.reduce(RooArgSet(tagged_mass,mumuMass,mumuMassE), cut)
 
     fraction = dict_s_rt[ibin] / (dict_s_rt[ibin] + dict_s_wt[ibin])
-    print 'mistag fraction on MC for bin ', ibin , ' : ' , fraction.n , '+/-', fraction.s 
+    fraction_err = math.sqrt( dict_s_wt[ibin]*dict_s_wt[ibin]*dict_s_rt_err[ibin]*dict_s_rt_err[ibin] + dict_s_rt[ibin]*dict_s_rt[ibin]*dict_s_wt_err[ibin]*dict_s_wt_err[ibin] ) / (dict_s_rt[ibin] + dict_s_wt[ibin]) / (dict_s_rt[ibin] + dict_s_wt[ibin])
+    print 'mistag fraction on MC for bin ', ibin , ' : ' , fraction , '+/-', fraction_err 
     
     ### creating RT component
     w.loadSnapshot("reference_fit_RT_%s"%ibin)
@@ -246,9 +255,9 @@ def fitData(fulldata, ibin):
     ### creating constraints for the WT component
     c_WTgauss  = RooProdPdf  ("c_WTgauss" , "c_WTgauss" , RooArgList(theWTgauss, c_alpha_wt1, c_n_wt1, c_sigma_wt, c_mean_wt, c_alpha_wt2, c_n_wt2  ) )     
 
-    frt              = RooRealVar ("F_{RT}"          , "frt"             , fraction.n , 0, 1)
+    frt              = RooRealVar ("F_{RT}"          , "frt"             , fraction , 0, 1)
     signalFunction   = RooAddPdf  ("sumgaus"         , "rt+wt"           , RooArgList(c_RTgauss,c_WTgauss), RooArgList(frt))
-    c_frt            = RooGaussian("c_frt"           , "c_frt"           , frt,  ROOT.RooFit.RooConst(fraction.n) , ROOT.RooFit.RooConst(fraction.s) )
+    c_frt            = RooGaussian("c_frt"           , "c_frt"           , frt,  ROOT.RooFit.RooConst(fraction) , ROOT.RooFit.RooConst(fraction_err) )
     c_signalFunction = RooProdPdf ("c_signalFunction", "c_signalFunction", RooArgList(signalFunction, c_frt))     
     c_vars.add(frt)
 
@@ -300,15 +309,15 @@ def fitData(fulldata, ibin):
 
 
 
-tData = ROOT.TChain('ntuple')
+# tData = ROOT.TChain('ntuple')
 tMC = ROOT.TChain('ntuple')
 
 if args.year == 'test':
-    tData.Add('/gwteray/users/fiorendi/final_ntuples_p5prime_allyears/2016Data_100k.root')
-    tMC.Add('/gwteray/users/fiorendi/final_ntuples_p5prime_allyears/2016MC_LMNR_100k.root')
+    # tData.Add('/home/t3cms/boletti/Run2-BdToKstarMuMu/samples/2016Data_All_finalSelection_massSkim.root')
+    tMC.Add('/home/t3cms/boletti/Run2-BdToKstarMuMu/samples/2016MC_LMNR_massSkim.root')
 else:    
-    tData.Add('/gwteray/users/fiorendi/final_ntuples_p5prime_allyears/%sData_All_finalSelection.root'%args.year)
-    tMC.Add('/gwteray/users/fiorendi/final_ntuples_p5prime_allyears/%sMC_LMNR.root'%args.year)
+    # tData.Add('/home/t3cms/boletti/Run2-BdToKstarMuMu/samples/%sData_All_finalSelection_massSkim.root'%args.year)
+    tMC.Add('/home/t3cms/boletti/Run2-BdToKstarMuMu/samples/%sMC_LMNR_massSkim.root'%args.year)
 #     tMC.Add('/gwpool/users/fiorendi/p5prime/CMSSW_8_0_24/src/B0KstarMM/B0KstMuMu/bdt/feb5_ntuples_fixPUW/final_ntuples/%sMC_LMNR_NoL1Selection.root'%args.year)
 
 
@@ -325,16 +334,16 @@ thevars.add(mumuMass)
 thevars.add(mumuMassE)
 thevars.add(tagB0)
 
-fulldata   = RooDataSet('fulldata', 'fulldataset', tData,  RooArgSet(thevars))
+# fulldata   = RooDataSet('fulldata', 'fulldataset', tData,  RooArgSet(thevars))
 
 
 ## add to the input tree the combination of the variables, to be used for the cuts on the dimuon mass
 deltaB0Mfunc = RooFormulaVar("deltaB0M", "deltaB0M", "@0 - @1", RooArgList(tagged_mass,B0Mass) )
 deltaJMfunc  = RooFormulaVar("deltaJpsiM" , "deltaJpsiM" , "@0 - @1", RooArgList(mumuMass,JPsiMass) )
 deltaPMfunc  = RooFormulaVar("deltaPsiPM" , "deltaPsiPM" , "@0 - @1", RooArgList(mumuMass,PsiPMass) )
-deltaB0M     = fulldata.addColumn(deltaB0Mfunc) ;
-deltaJpsiM   = fulldata.addColumn(deltaJMfunc) ;
-deltaPsiPM   = fulldata.addColumn(deltaPMfunc) ;
+# deltaB0M     = fulldata.addColumn(deltaB0Mfunc) ;
+# deltaJpsiM   = fulldata.addColumn(deltaJMfunc) ;
+# deltaPsiPM   = fulldata.addColumn(deltaPMfunc) ;
 
 genSignal       = RooRealVar("genSignal"      , "genSignal"      , 0, 10);
 thevarsMC   = thevars; 
@@ -359,7 +368,9 @@ wt_mc       = fullmc.reduce(RooArgSet(thevarsMC), '((tagB0==0 && genSignal==1) |
 
 c1 = ROOT.TCanvas() 
 dict_s_rt  = {}
+dict_s_rt_err  = {}
 dict_s_wt  = {}
+dict_s_wt_err  = {}
 
 out_f = TFile ("results_fits_%s_newCB.root"%args.year,"RECREATE") 
 
@@ -382,7 +393,7 @@ for ibin in range(len(q2binning)-1):
            
     fitMC(rt_mc, True, ibin)
     fitMC(wt_mc, False, ibin)
-    fitData(fulldata, ibin)
+    # fitData(fulldata, ibin)
 
 out_f.Close()
 w.writeToFile(out_f.GetName(), False)
